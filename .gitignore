@@ -1,0 +1,34 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+
+# Configuración de la IA (nunca subir claves)
+.env
+
+# Base de datos local
+database/*.db
+software_matematico.db
+
+# Archivos temporales
+*.tmp
+
+# Builds de PyInstaller
+build/
+dist/
+
+# ---------------------------------------------------------------------------
+# Los archivos *.spec se MANTIENEN versionados (NO ignorar).
+# Son necesarios para reproducir el ejecutable (pyinstaller SoftwareMatematicoIA.spec).
+# ---------------------------------------------------------------------------
+
+# Registro temporal de diagnóstico del anti-spoofing
+liveness_rostro.log
+
+# Respaldos de base de datos
+*.bak

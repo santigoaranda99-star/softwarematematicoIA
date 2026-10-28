@@ -1,0 +1,11 @@
+Modelos de detección de vida (liveness). Ambos se ejecutan con cv2.dnn (sin onnxruntime).
+
+antispoof_minifasv2.onnx
+  Origen: https://github.com/facenox/face-antispoof-onnx  (models/best/98.20/best_model.onnx)
+  Arquitectura: MiniFASNetV2-SE (Silent-Face-Anti-Spoofing). Licencia: Apache-2.0 (ver LICENSE_antispoof_Apache-2.0.txt)
+  Entrada: [1,3,128,128] RGB en [0,1], recorte cuadrado del rostro x1.5. Salida: logits [real, falso].
+
+face_landmarks.onnx
+  Origen: https://huggingface.co/fernandotonon/QtMeshEditor-facemesh-onnx
+  Arquitectura: MediaPipe Face Mesh V2 (478 puntos). Licencia: Apache-2.0 (Google MediaPipe).
+  Entrada: [1,256,256,3] RGB en [0,1], recorte rotado del rostro. Salida: 478 x (x,y,z) en píxeles del recorte.
