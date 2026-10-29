@@ -105,6 +105,26 @@ def migrar_usuarios_biometria():
     conexion.close()
 
 
+def migrar_usuarios_tm():
+    """
+    Agrega las columnas del ingreso rápido: la clase de los modelos de Teachable Machine
+    (models/tm_rostro, models/tm_voz) vinculada a cada usuario. Vacías = sin vincular.
+    """
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    for columna in ("clase_tm_rostro", "clase_tm_voz"):
+
+        if not _tabla_tiene_columna(cursor, "usuarios", columna):
+            cursor.execute(
+                f"ALTER TABLE usuarios "
+                f"ADD COLUMN {columna} TEXT NOT NULL DEFAULT ''"
+            )
+
+    conexion.commit()
+    conexion.close()
+
+
 def migrar_usuarios_ingreso():
     """
     Agrega las columnas de la palabra y la postura de ingreso propias de cada usuario:
@@ -377,6 +397,7 @@ def crear_base_datos():
     migrar_usuarios_embedding()
     migrar_usuarios_biometria()
     migrar_usuarios_ingreso()
+    migrar_usuarios_tm()
     migrar_seguridad()
     migrar_clases()
 

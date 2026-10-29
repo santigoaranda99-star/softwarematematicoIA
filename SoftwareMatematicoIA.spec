@@ -21,8 +21,12 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[("images", "images")],
+    datas=[("images", "images"), ("models", "models")],
     hiddenimports=[
+        "onnxruntime",
+        "interfaces.escaneo_tm",
+        "interfaces.ingreso_tm",
+        "services.modelos_tm",
         "matplotlib",
         "numpy",
         "mpl_toolkits.mplot3d",

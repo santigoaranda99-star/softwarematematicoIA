@@ -287,6 +287,45 @@ class UsuarioController:
         except sqlite3.Error:
             return []
 
+    # ==========================================
+    # INGRESO RÁPIDO (TEACHABLE MACHINE)
+    # ==========================================
+
+    @staticmethod
+    def guardar_clase_tm(usuario, tipo, clase):
+        """Vincula la clase del modelo de 'rostro' o 'voz' de Teachable Machine al usuario."""
+        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz"}[tipo]
+        try:
+            conexion = obtener_conexion()
+            conexion.execute(f"UPDATE usuarios SET {columna}=? WHERE LOWER(usuario)=LOWER(?)",
+                             (clase, usuario))
+            conexion.commit()
+            conexion.close()
+            return True
+        except sqlite3.Error:
+            return False
+
+    @staticmethod
+    def usuarios_por_clase_tm(tipo, clase):
+        """
+        Usuarios vinculados a una clase del modelo. Si nadie la vinculó todavía, se acepta el
+        usuario cuyo nombre de usuario (o primer nombre) es igual a la clase y que no tenga
+        otra clase vinculada.
+        """
+        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz"}[tipo]
+        try:
+            conexion = obtener_conexion()
+            filas = conexion.execute(f"SELECT * FROM usuarios WHERE LOWER({columna})=LOWER(?)",
+                                     (clase,)).fetchall()
+            if not filas:
+                filas = [f for f in conexion.execute(f"SELECT * FROM usuarios WHERE {columna}=''")
+                         if clase.lower() in (f["usuario"].strip().lower(),
+                                              (f["nombre"].split() or [""])[0].lower())]
+            conexion.close()
+            return filas
+        except sqlite3.Error:
+            return []
+
     @staticmethod
     def usuarios_con_rostro():
         """Usuarios con vector facial SFace guardado (para identificar 1:N en la prueba de vida)."""

@@ -20,7 +20,7 @@ from controllers.usuario_controller import UsuarioController
 from utils.validaciones import Validaciones
 from utils.mensajes import Mensajes
 from utils.rutas import ruta_recurso
-from utils.umbrales_biometria import UMBRAL_ROSTRO_SFACE, UMBRAL_ROSTRO_TM
+from utils.umbrales_biometria import INGRESO_RAPIDO_TM, UMBRAL_ROSTRO_SFACE, UMBRAL_ROSTRO_TM
 from interfaces.captura_biometrica import (
     ESTILO_BOTONES_BIOMETRIA,
     SEGUNDOS_GRABACION_VOZ,
@@ -820,7 +820,14 @@ class Login(QWidget):
 
         def refrescar():
             datos = UsuarioController.buscar_usuario(usuario)
-            vinculados = {
+            if INGRESO_RAPIDO_TM:
+                vinculados = {
+                    "rostro": _campo(datos, "clase_tm_rostro") and "escaneo rápido",
+                    "voz": _campo(datos, "clase_tm_voz") and "escaneo rápido",
+                    "postura": "postura de ingreso" if _campo(datos, "plantilla_postura") else "",
+                }
+            else:
+                vinculados = {
                 "rostro": (_campo(datos, "embedding_facial") or _campo(datos, "etiqueta_facial")) and "rostro",
                 "voz": ("palabra de ingreso" if _campo(datos, "plantilla_voz") else
                         _campo(datos, "embedding_voz") and _campo(datos, "etiqueta_voz")
@@ -828,11 +835,11 @@ class Login(QWidget):
                 "postura": ("postura de ingreso" if _campo(datos, "plantilla_postura") else
                             _campo(datos, "embedding_pose") and _campo(datos, "etiqueta_pose")
                             and f"{_campo(datos, 'etiqueta_pose')}, sistema anterior"),
-            }
+                }
             for metodo, estado in estados.items():
                 valor = vinculados[metodo]
                 if valor:
-                    detalle = "" if metodo == "rostro" else f" ({valor})"
+                    detalle = "" if valor == "rostro" else f" ({valor})"
                     estado.setText(f"✓ Vinculado{detalle}")
                     estado.setStyleSheet("color: #059669; font-weight: bold;")
                 else:
@@ -859,6 +866,10 @@ class Login(QWidget):
             "voz": vincular_voz,
             "postura": vincular_postura,
         }
+        if INGRESO_RAPIDO_TM:
+            from interfaces import ingreso_tm
+            acciones["rostro"] = lambda: ingreso_tm.vincular(dlg, usuario, "rostro", refrescar)
+            acciones["voz"] = lambda: ingreso_tm.vincular(dlg, usuario, "voz", refrescar)
 
         refrescar()
         dlg.exec_()
@@ -952,6 +963,11 @@ class Login(QWidget):
     # =====================================================
 
     def iniciar_sesion_facial(self):
+
+        if INGRESO_RAPIDO_TM:
+            from interfaces import ingreso_tm
+            ingreso_tm.ingresar(self, "rostro")
+            return
 
         if liveness.LIVENESS_ROSTRO:
             self._iniciar_sesion_facial_con_vida()
@@ -1284,7 +1300,11 @@ class Login(QWidget):
         return biometria_vinculada(datos_usuario, metodo)
 
     def iniciar_sesion_voz(self):
-        """Palabra de ingreso propia si existe; si no, el sistema anterior (Teachable Machine)."""
+        """Escaneo rápido de voz; o la palabra de ingreso / sistema anterior si está desactivado."""
+        if INGRESO_RAPIDO_TM:
+            from interfaces import ingreso_tm
+            ingreso_tm.ingresar(self, "voz")
+            return
         self._iniciar_sesion_plantilla("voz", "plantilla_voz", self._iniciar_sesion_voz_anterior)
 
     def iniciar_sesion_pose(self):

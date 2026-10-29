@@ -11,6 +11,18 @@ Aplicación de escritorio en **Python + PyQt5** que resuelve problemas matemáti
 - Validación matemática automática con SymPy (expresiones y ecuaciones simples).
 - Historial por usuario con **procedimiento** y **resultado** separados.
 - Manejo diferenciado de errores de la API (clave inválida, modelo inexistente, sin conexión, timeout, límites).
+- Ingreso rápido por rostro (escaneo de 3,5 s) y por voz (3 s) con modelos de Teachable Machine.
+
+## Ingreso rápido por rostro y voz
+
+- **Rostro:** `models/tm_rostro/` (export Keras convertido a ONNX, se ejecuta con onnxruntime).
+  La identidad se confirma con SFace y el celular/foto se detecta con MiniFASNetV2.
+- **Voz:** `models/tm_voz/` (export TensorFlow Lite, se ejecuta con LiteRT).
+- Cada cuenta se vincula una vez en **🔗 Vincular mi Biometría**; luego basta con pulsar
+  📷 Rostro o 🎤 Voz en el inicio de sesión.
+- Umbrales y tiempos: `utils/umbrales_biometria.py`. Cada escaneo se anota en `escaneo_tm.log`.
+- Al reentrenar el modelo de imagen, reemplace `models/tm_rostro/keras_model.h5` y `labels.txt`
+  y ejecute `tools/convertir_modelos_tm.py` (instrucciones dentro del archivo).
 
 ## Requisitos
 

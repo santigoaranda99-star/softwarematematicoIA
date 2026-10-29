@@ -32,3 +32,6 @@ liveness_rostro.log
 
 # Respaldos de base de datos
 *.bak
+
+# Registro de los escaneos de rostro y voz (calibración)
+escaneo_tm.log

@@ -10,3 +10,5 @@ matplotlib>=3.8.0
 tensorflow
 sounddevice==0.5.6
 vosk==0.3.45
+onnxruntime==1.31.1
+ai-edge-litert==2.3.0

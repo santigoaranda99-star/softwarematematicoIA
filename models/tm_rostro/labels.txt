@@ -1,0 +1,7 @@
+0 mendi
+1 alexa
+2 santi
+3 otros
+4 oscuro
+5 fondo
+6 movil

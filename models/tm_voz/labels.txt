@@ -1,0 +1,6 @@
+0 Ruido de fondo
+1 alexa
+2 audio-tel
+3 mendi
+4 otros
+5 santi
