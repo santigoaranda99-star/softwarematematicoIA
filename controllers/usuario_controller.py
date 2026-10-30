@@ -293,8 +293,8 @@ class UsuarioController:
 
     @staticmethod
     def guardar_clase_tm(usuario, tipo, clase):
-        """Vincula la clase del modelo de 'rostro' o 'voz' de Teachable Machine al usuario."""
-        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz"}[tipo]
+        """Vincula la clase del modelo de 'rostro', 'voz' o 'postura' de Teachable Machine al usuario."""
+        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz", "postura": "clase_tm_postura"}[tipo]
         try:
             conexion = obtener_conexion()
             conexion.execute(f"UPDATE usuarios SET {columna}=? WHERE LOWER(usuario)=LOWER(?)",
@@ -312,7 +312,7 @@ class UsuarioController:
         usuario cuyo nombre de usuario (o primer nombre) es igual a la clase y que no tenga
         otra clase vinculada.
         """
-        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz"}[tipo]
+        columna = {"rostro": "clase_tm_rostro", "voz": "clase_tm_voz", "postura": "clase_tm_postura"}[tipo]
         try:
             conexion = obtener_conexion()
             filas = conexion.execute(f"SELECT * FROM usuarios WHERE LOWER({columna})=LOWER(?)",

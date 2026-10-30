@@ -189,6 +189,33 @@ def crear_plantilla_voz(audios, frecuencia):
     return True, plantilla, "Palabra de ingreso registrada."
 
 
+def mejor_grupo_voz(muestras):
+    """
+    Registro adaptativo: de todas las grabaciones válidas (secuencias MFCC) elige las 3 más
+    parecidas entre sí (o 2 si no hay 3 compatibles). Así una grabación con otro tono o con
+    ruido no obliga a repetirlo todo. Devuelve (plantilla | None, distancia máxima del grupo).
+    """
+    from itertools import combinations
+
+    mejor = (None, float("inf"))
+    for tamano in (3, 2):
+        for grupo in combinations(range(len(muestras)), tamano):
+            distancias = [distancia_dtw(muestras[i], muestras[j]) for i, j in combinations(grupo, 2)]
+            peor = max(distancias)
+            if peor <= _DISTANCIA_REGISTRO_MAX and peor < mejor[1]:
+                plantilla = {
+                    "version": 1,
+                    "muestras": [np.round(muestras[i], 3).tolist() for i in grupo],
+                    "distancia_ref": round(float(np.mean(distancias)), 4),
+                }
+                mejor = (plantilla, peor)
+        if mejor[0] is not None:
+            print(f"[VozIngreso] Grupo elegido de {len(mejor[0]['muestras'])} de {len(muestras)} "
+                  f"grabaciones (distancia máx. {mejor[1]:.2f})")
+            return mejor
+    return mejor
+
+
 def comparar_voz(audio, frecuencia, plantilla):
     """
     Compara una grabación con la plantilla del usuario. Devuelve (confianza 0-1, mensaje).

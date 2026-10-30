@@ -64,19 +64,44 @@ class Veredicto:
     votos: float = 0.0          # fracción de muestras que votaron por la clase
     motivo: str = ""
     conteo: dict = field(default_factory=dict)
+    rechazo: str = ""           # "pocas" | "falso" | "nadie" | "dudoso" (vacío si se aprobó)
+
+
+_MENSAJES = {
+    "rostro": {
+        "pocas": "No se vio su rostro el tiempo suficiente. Mire de frente a la cámara, con buena "
+                 "luz, durante todo el escaneo.",
+        "falso": "⚠️ Se detectó la pantalla de un celular o una foto. Debe estar usted en persona "
+                 "frente a la cámara.",
+        "nadie": "No se reconoció a ningún usuario frente a la cámara.",
+        "consejo": "Quédese quieto, de frente y con buena luz, e intente de nuevo.",
+    },
+    "voz": {
+        "pocas": "No se escuchó su voz el tiempo suficiente. Hable cerca del micrófono durante la "
+                 "grabación.",
+        "falso": "⚠️ Se detectó un audio reproducido desde un teléfono o parlante. Hable usted "
+                 "directamente al micrófono.",
+        "nadie": "No se reconoció la voz de ningún usuario registrado.",
+        "consejo": "Hable claro y sin ruido alrededor, e intente de nuevo.",
+    },
+    "postura": {
+        "pocas": "No se vio su cuerpo el tiempo suficiente. Aléjese para que se vean su cabeza, "
+                 "hombros, brazos y torso, y mantenga la postura todo el escaneo.",
+        "falso": "⚠️ Se detectó una foto o pantalla. Debe estar usted en persona frente a la cámara.",
+        "nadie": "No se reconoció ninguna postura registrada.",
+        "consejo": "Mantenga quieta su postura, de cuerpo visible y con buena luz, e intente de nuevo.",
+    },
+}
 
 
 def decidir(probabilidades, etiquetas, clases_persona, clases_suplantacion,
             umbral, votos_minimos, muestras_minimas, fraccion_suplantacion, que="rostro",
             contar_sin_persona=True):
+    mensajes = _MENSAJES[que]
     probabilidades = np.asarray(probabilidades, dtype=np.float32)
     n = len(probabilidades)
     if n < muestras_minimas:
-        detalle = ("No se vio su rostro el tiempo suficiente. Mire de frente a la cámara, "
-                   "con buena luz, durante todo el escaneo." if que == "rostro" else
-                   "No se escuchó su voz el tiempo suficiente. Hable cerca del micrófono "
-                   "durante la grabación.")
-        return Veredicto(False, motivo=detalle)
+        return Veredicto(False, motivo=mensajes["pocas"], rechazo="pocas")
 
     ganadores = probabilidades.argmax(axis=1)
     conteo = {}
@@ -96,19 +121,13 @@ def decidir(probabilidades, etiquetas, clases_persona, clases_suplantacion,
     # Suplantación solo si es mayoritaria o supera a la persona: unos pocos cuadros
     # confundidos con "movil" no bastan para rechazar a alguien real.
     if votos_falsos and (votos_falsos / base >= fraccion_suplantacion or votos_falsos > mejor_persona):
-        detalle = ("⚠️ Se detectó la pantalla de un celular o una foto. Debe estar usted en persona "
-                   "frente a la cámara." if que == "rostro" else
-                   "⚠️ Se detectó un audio reproducido desde un teléfono o parlante. Hable usted "
-                   "directamente al micrófono.")
-        return Veredicto(False, motivo=detalle, conteo=conteo)
+        return Veredicto(False, motivo=mensajes["falso"], conteo=conteo, rechazo="falso")
 
     if not votos_persona:
-        if que == "rostro" and max(conteo, key=conteo.get).lower() in ("oscuro", "fondo oscuro"):
-            return Veredicto(False, motivo="La imagen está muy oscura. Encienda una luz frente a su "
-                                           "rostro e intente de nuevo.", conteo=conteo)
-        detalle = ("No se reconoció a ningún usuario frente a la cámara." if que == "rostro" else
-                   "No se reconoció la voz de ningún usuario registrado.")
-        return Veredicto(False, motivo=detalle, conteo=conteo)
+        if que != "voz" and max(conteo, key=conteo.get).lower() in ("oscuro", "fondo oscuro"):
+            return Veredicto(False, motivo="La imagen está muy oscura. Encienda una luz frente a "
+                                           "usted e intente de nuevo.", conteo=conteo, rechazo="nadie")
+        return Veredicto(False, motivo=mensajes["nadie"], conteo=conteo, rechazo="nadie")
 
     clase = max(votos_persona, key=votos_persona.get)
     indice = etiquetas.index(clase)
@@ -120,9 +139,7 @@ def decidir(probabilidades, etiquetas, clases_persona, clases_suplantacion,
     if votos < votos_minimos or confianza < umbral or segundo > 0.5 * votos_persona[clase]:
         return Veredicto(False, clase, confianza, votos, (
             f"El reconocimiento no fue concluyente ({votos * 100:.0f}% de coincidencia, "
-            f"confianza {confianza * 100:.0f}%). "
-            + ("Quédese quieto, de frente y con buena luz, e intente de nuevo." if que == "rostro"
-               else "Hable claro y sin ruido alrededor, e intente de nuevo.")
-        ), conteo)
+            f"confianza {confianza * 100:.0f}%). " + mensajes["consejo"]
+        ), conteo, rechazo="dudoso")
 
     return Veredicto(True, clase, confianza, votos, "", conteo)

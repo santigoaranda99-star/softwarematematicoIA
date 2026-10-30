@@ -9,14 +9,51 @@ try:
 except Exception:
     sd = None
 
-try:
-    import keras
-except ImportError:
-    keras = None
-
 from utils.rutas import ruta_recurso
 from utils.modelos_tfjs import leer_modelo_tfjs, leer_metadata, resolver_etiqueta
 from utils.umbrales_biometria import UMBRAL_CONFIANZA_VOZ, UMBRAL_SIMILITUD_VOZ_TM
+
+
+class _RedAudioNumpy:
+    """
+    La red de speech-commands de Teachable Machine (4 x [Conv2D relu + MaxPool] → Flatten →
+    Dense(2000, relu) → Dense(clases, softmax)) ejecutada con NumPy, sin TensorFlow/Keras, para
+    que funcione igual en el .exe. predict(lote) → (vector de dense_1, probabilidades).
+    """
+
+    CAPAS = [("conv2d_1", (2, 2), (2, 2)), ("conv2d_2", (2, 2), (2, 2)),
+             ("conv2d_3", (2, 2), (2, 2)), ("conv2d_4", (2, 2), (1, 2))]
+
+    def __init__(self, pesos):
+        self.pesos = {k: np.asarray(v, dtype=np.float32) for k, v in pesos.items()}
+
+    @staticmethod
+    def _conv_relu(x, kernel, bias):
+        """Conv2D 'valid', paso 1, canales al final: x [n, h, w, c] · kernel [kh, kw, c, f]."""
+        kh, kw = kernel.shape[:2]
+        ventanas = np.lib.stride_tricks.sliding_window_view(x, (kh, kw), axis=(1, 2))  # n,h',w',c,kh,kw
+        salida = np.einsum("nhwcij,ijcf->nhwf", ventanas, kernel, optimize=True) + bias
+        return np.maximum(salida, 0.0)
+
+    @staticmethod
+    def _max_pool(x, tamano, paso):
+        n, h, w, c = x.shape
+        ph, pw = tamano
+        sh, sw = paso
+        h2, w2 = (h - ph) // sh + 1, (w - pw) // sw + 1
+        ventanas = np.lib.stride_tricks.sliding_window_view(x, (ph, pw), axis=(1, 2))
+        return ventanas[:, ::sh, ::sw][:, :h2, :w2].max(axis=(4, 5))
+
+    def predict(self, lote, verbose=0):
+        x = np.asarray(lote, dtype=np.float32)
+        for nombre, tamano, paso in self.CAPAS:
+            x = self._conv_relu(x, self.pesos[f"{nombre}/kernel"], self.pesos[f"{nombre}/bias"])
+            x = self._max_pool(x, tamano, paso)
+        x = x.reshape(len(x), -1)
+        vector = np.maximum(x @ self.pesos["dense_1/kernel"] + self.pesos["dense_1/bias"], 0.0)
+        logits = vector @ self.pesos["NewHeadDense/kernel"] + self.pesos["NewHeadDense/bias"]
+        probs = np.exp(logits - logits.max(axis=1, keepdims=True))
+        return vector, probs / probs.sum(axis=1, keepdims=True)
 
 
 class ReconocedorVoz:
@@ -73,13 +110,9 @@ class ReconocedorVoz:
 
     @classmethod
     def cargar_modelo(cls):
-        """Reconstruye el modelo Keras a partir de model.json + weights.bin."""
+        """Carga el modelo de model.json + weights.bin y lo ejecuta con NumPy (_RedAudioNumpy)."""
         if cls._modelo is not None:
             return True
-
-        if keras is None:
-            cls._error_carga = "Keras / TensorFlow no está instalado."
-            return False
 
         try:
             directorio = ruta_recurso(cls.DIRECTORIO_MODELO)
@@ -93,31 +126,8 @@ class ReconocedorVoz:
                 raise ValueError(f"model.json espera {forma}, pero el espectrograma es "
                                  f"[None, {cls.NUM_FRAMES}, {cls.NUM_BINS}, 1].")
 
-            capas = keras.layers
-            entrada = keras.Input(shape=(cls.NUM_FRAMES, cls.NUM_BINS, 1))
-            x = entrada
-            for capa in [
-                capas.Conv2D(8, (2, 8), activation="relu", name="conv2d_1"),
-                capas.MaxPooling2D((2, 2), strides=(2, 2)),
-                capas.Conv2D(32, (2, 4), activation="relu", name="conv2d_2"),
-                capas.MaxPooling2D((2, 2), strides=(2, 2)),
-                capas.Conv2D(32, (2, 4), activation="relu", name="conv2d_3"),
-                capas.MaxPooling2D((2, 2), strides=(2, 2)),
-                capas.Conv2D(32, (2, 4), activation="relu", name="conv2d_4"),
-                capas.MaxPooling2D((2, 2), strides=(1, 2)),
-                capas.Flatten(),
-                capas.Dense(2000, activation="relu", name="dense_1"),
-                capas.Dense(len(cls._etiquetas), activation="softmax", name="NewHeadDense"),
-            ]:
-                x = capa(x)
-            modelo = keras.Model(entrada, x)
-            for capa in modelo.layers:
-                if capa.weights:
-                    capa.set_weights([pesos[f"{capa.name}/kernel"], pesos[f"{capa.name}/bias"]])
-
-            cls._modelo = modelo
-            # Mismo modelo con dos salidas: vector de dense_1 (referencia de voz) y probabilidades
-            cls._modelo_vector = keras.Model(modelo.inputs, [modelo.get_layer("dense_1").output, modelo.output])
+            # Una sola red con dos salidas: vector de dense_1 (referencia de voz) y probabilidades
+            cls._modelo = cls._modelo_vector = _RedAudioNumpy(pesos)
             cls._error_carga = None
             print(f"[VozAuth] Modelo de audio cargado con etiquetas: {cls._etiquetas}")
             return True

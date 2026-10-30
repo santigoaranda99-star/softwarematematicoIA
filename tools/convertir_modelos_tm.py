@@ -7,7 +7,10 @@ Convierte las exportaciones de Teachable Machine a ONNX para el ingreso rápido.
 Uso (en un entorno aparte, la app no necesita estas librerías):
     python -m venv C:\\tmc
     C:\\tmc\\Scripts\\pip install tensorflow tf2onnx onnxruntime h5py
-    C:\\tmc\\Scripts\\python tools\\convertir_modelos_tm.py
+    C:\\tmc\\Scripts\\python tools\\convertir_modelos_tm.py [rostro] [voz] [posenet]
+
+La postura de Teachable Machine solo se exporta como TF.js (model.json + weights.bin en
+models/my-pose-model): esa cabeza se lee directamente en Python y solo PoseNet se convierte.
 
 Genera modelo.onnx junto a cada original y compara las salidas con el modelo de origen;
 si alguna conversión no coincide, no se escribe ese .onnx (la app usará el original).
@@ -28,6 +31,7 @@ import tf2onnx
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR_ROSTRO = os.path.join(RAIZ, "models", "tm_rostro")
 DIR_VOZ = os.path.join(RAIZ, "models", "tm_voz")
+DIR_POSENET = os.path.join(RAIZ, "models", "posenet", "mobilenet_075_stride16")
 TOLERANCIA = 1e-3
 
 
@@ -131,9 +135,43 @@ def convertir_voz():
     return _guardar_si_coincide(modelo_onnx, os.path.join(DIR_VOZ, "modelo.onnx"), entradas, np.stack(referencia))
 
 
+def convertir_posenet():
+    """
+    PoseNet MobileNetV1 0.75 (el mismo que usa Teachable Machine para postura) de SavedModel a
+    ONNX, para clasificar posturas con onnxruntime sin TensorFlow. Salidas: heatmap y offsets.
+    """
+    print("PoseNet (SavedModel → ONNX)")
+    posenet = tf.saved_model.load(DIR_POSENET)
+    firma = [tf.TensorSpec((1, 257, 257, 3), tf.float32, name="imagen")]
+    funcion = tf.function(lambda imagen: posenet.signatures["serving_default"](imagen=imagen))
+    modelo_onnx, _ = tf2onnx.convert.from_function(funcion, input_signature=firma, opset=17,
+                                                   output_path=None)
+
+    sesion = ort.InferenceSession(modelo_onnx.SerializeToString(), providers=["CPUExecutionProvider"])
+    nombres = [s.name for s in sesion.get_outputs()]
+    diferencia = 0.0
+    for x in np.random.default_rng(0).uniform(-1, 1, (3, 1, 257, 257, 3)).astype(np.float32):
+        ref = posenet.signatures["serving_default"](imagen=tf.constant(x))
+        salida = dict(zip(nombres, sesion.run(None, {sesion.get_inputs()[0].name: x})))
+        for clave in ("heatmap", "offsets"):
+            onnx_valor = next(v for n, v in salida.items() if clave in n)
+            diferencia = max(diferencia, float(np.abs(onnx_valor - ref[clave].numpy()).max()))
+    print(f"  salidas {nombres}, diferencia máxima con el original: {diferencia:.2e}")
+    if diferencia > TOLERANCIA:
+        print("  ❌ No coincide: no se guarda el .onnx")
+        return False
+    destino = os.path.join(os.path.dirname(DIR_POSENET), "posenet_075_stride16.onnx")
+    with open(destino, "wb") as f:
+        f.write(modelo_onnx.SerializeToString())
+    print(f"  ✅ {destino}")
+    return True
+
+
 if __name__ == "__main__":
+    todos = {"rostro": convertir_rostro, "voz": convertir_voz, "posenet": convertir_posenet}
+    elegidos = sys.argv[1:] or list(todos)
     resultados = []
-    for convertir in (convertir_rostro, convertir_voz):
+    for convertir in (todos[n] for n in elegidos):
         try:
             resultados.append(convertir())
         except Exception as error:

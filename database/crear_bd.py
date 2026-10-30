@@ -113,7 +113,7 @@ def migrar_usuarios_tm():
     conexion = obtener_conexion()
     cursor = conexion.cursor()
 
-    for columna in ("clase_tm_rostro", "clase_tm_voz"):
+    for columna in ("clase_tm_rostro", "clase_tm_voz", "clase_tm_postura"):
 
         if not _tabla_tiene_columna(cursor, "usuarios", columna):
             cursor.execute(

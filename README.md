@@ -11,13 +11,18 @@ Aplicación de escritorio en **Python + PyQt5** que resuelve problemas matemáti
 - Validación matemática automática con SymPy (expresiones y ecuaciones simples).
 - Historial por usuario con **procedimiento** y **resultado** separados.
 - Manejo diferenciado de errores de la API (clave inválida, modelo inexistente, sin conexión, timeout, límites).
-- Ingreso rápido por rostro (escaneo de 3,5 s) y por voz (3 s) con modelos de Teachable Machine.
+- Ingreso rápido por rostro (escaneo de 3,5 s), voz (3 s) y postura (4 s) con modelos de Teachable Machine.
 
-## Ingreso rápido por rostro y voz
+## Ingreso rápido por rostro, voz y postura
 
 - **Rostro:** `models/tm_rostro/` (export Keras convertido a ONNX, se ejecuta con onnxruntime).
-  La identidad se confirma con SFace y el celular/foto se detecta con MiniFASNetV2.
-- **Voz:** `models/tm_voz/` (export TensorFlow Lite, se ejecuta con LiteRT).
+  Teachable Machine confirma que hay una persona; quién es lo decide SFace, y el celular/foto
+  se detecta con MiniFASNetV2.
+- **Voz:** `models/tm_voz/` (export TensorFlow Lite, se ejecuta con LiteRT). Doble verificación:
+  la palabra clave secreta del usuario (grabada 3 veces) y que el modelo reconozca su voz.
+- **Postura:** `models/my-pose-model/` (export TF.js) sobre PoseNet convertido a ONNX
+  (`models/posenet/posenet_075_stride16.onnx`). Si la cuenta tiene rostro, la cara también se
+  confirma con SFace.
 - Cada cuenta se vincula una vez en **🔗 Vincular mi Biometría**; luego basta con pulsar
   📷 Rostro o 🎤 Voz en el inicio de sesión.
 - Umbrales y tiempos: `utils/umbrales_biometria.py`. Cada escaneo se anota en `escaneo_tm.log`.
@@ -71,17 +76,24 @@ O bien, si el usuario no tiene Python instalado, usar el ejecutable (ver abajo).
 
 ## Generar el ejecutable (.exe)
 
+Antes de la primera compilación, copie `tools/sitecustomize.py` a `venv/Lib/site-packages/`
+(evita que el análisis de PyInstaller se caiga por el conflicto de `msvcp140.dll` con PyQt5).
+
 ```bash
-pyinstaller SoftwareMatematicoIA.spec --noconfirm
+venv\Scripts\python.exe -m PyInstaller SoftwareMatematicoIA.spec --noconfirm
 ```
 
-El ejecutable se genera en `dist/SoftwareMatematicoIA.exe`.
+Se genera la carpeta `dist/SoftwareMatematicoIA/` con `SoftwareMatematicoIA.exe` y la carpeta
+`_internal` (librerías, imágenes y modelos). No necesita Python ni TensorFlow.
 
-**Importante al distribuir el .exe:**
+**Importante al distribuir:**
 
-- Copie el `.exe` junto con un archivo `.env` (con `GROUP_API_KEY`, `GROUP_BASE_URL` y `GROUP_MODEL`) en la misma carpeta.
-- La base de datos `software_matematico.db` se crea automáticamente junto al ejecutable la primera vez que se abre.
-- La carpeta `images/` se incluye dentro del ejecutable (no hace falta copiarla).
+- Copie la carpeta completa `dist/SoftwareMatematicoIA/`, no solo el `.exe`.
+- Ponga en esa carpeta el `.env` (con `GROUP_API_KEY`, `GROUP_BASE_URL` y `GROUP_MODEL`).
+- La base de datos `software_matematico.db` se lee/crea junto al ejecutable. Para conservar
+  las cuentas ya registradas, copie ahí la de `database/`.
+- Para comprobar el ejecutable en otra computadora: `SoftwareMatematicoIA.exe --autoprueba`
+  escribe `autoprueba.txt` con el estado de los modelos, la cámara, el micrófono y la base de datos.
 
 ## Estructura del proyecto
 

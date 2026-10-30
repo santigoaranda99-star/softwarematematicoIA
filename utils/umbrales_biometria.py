@@ -35,6 +35,15 @@ FRACCION_CON_ROSTRO = 0.60           # cuadros que deben tener una cara detectad
 UMBRAL_VOZ_ESCANEO = 0.75
 VOTOS_VOZ_ESCANEO = 0.50
 VENTANAS_VOZ_MINIMAS = 2             # ventanas de 1 s con voz (no ruido de fondo) necesarias
+# Postura (models/my-pose-model): unos segundos para ponerse en posición y luego el escaneo.
+# La cara que aparece en la cámara se confirma con SFace contra la cuenta.
+SEGUNDOS_PREPARAR_POSTURA = 3.0
+SEGUNDOS_ESCANEO_POSTURA = 4.0
+UMBRAL_POSTURA_ESCANEO = 0.80
+VOTOS_POSTURA_ESCANEO = 0.60
+PUNTOS_POSTURA_MINIMOS = 7           # puntos del cuerpo visibles para que un cuadro cuente
+# Voz: además de la clase del modelo, la palabra clave del usuario (plantilla MFCC/DTW)
+UMBRAL_PALABRA_CLAVE = 0.50
 # Quién detecta el celular/foto en el rostro: "antispoof" = MiniFASNetV2 (models/liveness),
 # "clase_movil" = la clase "movil" de Teachable Machine (se confundía con caras reales).
 SUPLANTACION_ROSTRO = "antispoof"

@@ -28,6 +28,34 @@ def leer_modelo_tfjs(directorio):
     return datos["modelTopology"], pesos
 
 
+def capas_densas(topologia, pesos):
+    """
+    Capas Dense de la cabeza de Teachable Machine en orden: [(kernel, bias | None, activación)].
+    Los nombres cambian en cada exportación (dense_Dense1, dense_Dense7...), por eso se leen
+    de la topología en vez de fijarlos.
+    """
+    capas = topologia["config"]["layers"] if isinstance(topologia.get("config"), dict) else topologia["config"]
+    densas = []
+    for capa in capas:
+        if capa["class_name"] != "Dense":
+            continue
+        nombre = capa["config"]["name"]
+        densas.append((pesos[f"{nombre}/kernel"], pesos.get(f"{nombre}/bias"), capa["config"].get("activation")))
+    return densas
+
+
+def aplicar_densas(x, densas):
+    """Ejecuta la cabeza Dense (relu/softmax) con NumPy sobre un lote x [n, entradas]."""
+    for kernel, bias, activacion in densas:
+        x = x @ kernel + (bias if bias is not None else 0.0)
+        if activacion == "relu":
+            x = np.maximum(x, 0.0)
+        elif activacion == "softmax":
+            x = np.exp(x - x.max(axis=-1, keepdims=True))
+            x = x / x.sum(axis=-1, keepdims=True)
+    return x
+
+
 def leer_metadata(directorio):
     """Lee metadata.json de Teachable Machine."""
     with open(os.path.join(directorio, "metadata.json"), "r", encoding="utf-8") as f:

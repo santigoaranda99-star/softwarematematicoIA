@@ -8,13 +8,8 @@ try:
 except ImportError:
     cv2 = None
 
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-
 from utils.rutas import ruta_recurso
-from utils.modelos_tfjs import leer_modelo_tfjs, leer_metadata, resolver_etiqueta
+from utils.modelos_tfjs import aplicar_densas, capas_densas, leer_modelo_tfjs, leer_metadata, resolver_etiqueta
 from utils.umbrales_biometria import UMBRAL_SIMILITUD_POSTURA
 
 
@@ -25,17 +20,16 @@ class ReconocedorPose:
     El clasificador de TM no recibe keypoints: recibe las salidas crudas de PoseNet
     MobileNetV1 (multiplier 0.75, outputStride 16, inputResolution 257), es decir
     sigmoid(heatmaps) [17x17x17] concatenado por canal con offsets [17x17x34] y
-    aplanado -> vector de 14739 valores. Por eso se ejecuta el mismo PoseNet
-    (convertido a SavedModel en models/posenet/) y no MediaPipe.
+    aplanado -> vector de 14739 valores. Por eso se ejecuta el mismo PoseNet (en ONNX,
+    models/posenet/posenet_075_stride16.onnx, compartido con services.modelos_tm) y no MediaPipe.
     """
     DIRECTORIO_MODELO = os.path.join("models", "my-pose-model")
-    DIRECTORIO_POSENET = os.path.join("models", "posenet", "mobilenet_075_stride16")
 
     RESOLUCION = 257
     # La webcam de Teachable Machine muestra (y entrena) la imagen espejada
     VOLTEAR_HORIZONTAL = True
 
-    CLASES_DESCARTADAS = {"otros", "fondo", "oscuro"}
+    CLASES_DESCARTADAS = {"otros", "fondo", "oscuro", "fondo oscuro"}
 
     PASO_SALIDA = 16  # outputStride de PoseNet: píxeles por celda de los heatmaps
     PUNTUACION_MINIMA_KEYPOINT = 0.3
@@ -58,18 +52,22 @@ class ReconocedorPose:
         if cls._posenet is not None:
             return True
 
-        if tf is None or cv2 is None:
-            cls._error_carga = "TensorFlow u OpenCV no están instalados."
+        if cv2 is None:
+            cls._error_carga = "OpenCV no está instalado."
             return False
 
         try:
+            from services.modelos_tm import ModeloPosturaTM
+
             directorio = ruta_recurso(cls.DIRECTORIO_MODELO)
             cls._etiquetas = [e.strip() for e in leer_metadata(directorio)["labels"]]
-            _, pesos = leer_modelo_tfjs(directorio)
-            # Cabeza de TM: Dense(100, relu) -> Dropout -> Dense(6, softmax, sin bias)
-            cls._pesos = (pesos["dense_Dense7/kernel"], pesos["dense_Dense7/bias"], pesos["dense_Dense8/kernel"])
+            topologia, pesos = leer_modelo_tfjs(directorio)
+            # Cabeza de TM: Dense(100, relu) -> Dropout -> Dense(clases, softmax, sin bias)
+            cls._pesos = capas_densas(topologia, pesos)
 
-            cls._posenet = tf.saved_model.load(ruta_recurso(cls.DIRECTORIO_POSENET))
+            if not ModeloPosturaTM.cargar():
+                raise RuntimeError(ModeloPosturaTM.error_carga())
+            cls._posenet = ModeloPosturaTM._sesion
             cls._error_carga = None
             print(f"[PoseAuth] PoseNet y clasificador de pose cargados con etiquetas: {cls._etiquetas}")
             return True
@@ -90,28 +88,19 @@ class ReconocedorPose:
 
     @classmethod
     def preprocesar(cls, frame_bgr):
-        """Recorte cuadrado centrado, espejo, RGB y escalado a 257x257 normalizado a [-1, 1]."""
-        alto, ancho = frame_bgr.shape[:2]
-        lado = min(alto, ancho)
-        y0, x0 = (alto - lado) // 2, (ancho - lado) // 2
-        recorte = frame_bgr[y0:y0 + lado, x0:x0 + lado]
-        if cls.VOLTEAR_HORIZONTAL:
-            recorte = cv2.flip(recorte, 1)
-        rgb = cv2.cvtColor(recorte, cv2.COLOR_BGR2RGB).astype(np.float32)
-
-        # TF.js 1.7 resizeBilinear usa el muestreo antiguo (sin half-pixel centers)
-        redimensionada = tf.raw_ops.ResizeBilinear(
-            images=rgb[np.newaxis], size=[cls.RESOLUCION, cls.RESOLUCION],
-            align_corners=False, half_pixel_centers=False
-        )
-        return redimensionada / 127.5 - 1.0
+        """Recorte cuadrado centrado, espejo, RGB y escalado a 257x257 (bilineal de TF.js) en [-1, 1]."""
+        from services.modelos_tm import ModeloPosturaTM
+        return ModeloPosturaTM.preprocesar(frame_bgr)[np.newaxis].astype(np.float32)
 
     @classmethod
     def _salidas_posenet(cls, frame_bgr):
         """Devuelve (vector de 14739 valores para el clasificador de TM, keypoints [17, 3])."""
-        salida = cls._posenet(cls.preprocesar(frame_bgr))
-        heatmaps = tf.sigmoid(salida["heatmap"])[0].numpy()
-        offsets = salida["offsets"][0].numpy()
+        nombres = [s.name for s in cls._posenet.get_outputs()]
+        salida = dict(zip(nombres, cls._posenet.run(
+            None, {cls._posenet.get_inputs()[0].name: cls.preprocesar(frame_bgr)})))
+        heatmaps = next(v for n, v in salida.items() if "heatmap" in n)[0]
+        heatmaps = 1.0 / (1.0 + np.exp(-heatmaps))
+        offsets = next(v for n, v in salida.items() if "offsets" in n)[0]
         caracteristicas = np.concatenate([heatmaps, offsets], axis=2).reshape(-1)
         return caracteristicas, cls._keypoints(heatmaps, offsets)
 
@@ -144,10 +133,7 @@ class ReconocedorPose:
     def _analizar_frame(cls, frame_bgr):
         """Devuelve (probabilidades de TM, keypoints) de un frame."""
         caracteristicas, keypoints = cls._salidas_posenet(frame_bgr)
-        w1, b1, w2 = cls._pesos
-        logits = np.maximum(caracteristicas @ w1 + b1, 0.0) @ w2
-        probs = np.exp(logits - logits.max())
-        return probs / probs.sum(), keypoints
+        return aplicar_densas(caracteristicas[np.newaxis], cls._pesos)[0], keypoints
 
     @classmethod
     def predecir(cls, frame_bgr):

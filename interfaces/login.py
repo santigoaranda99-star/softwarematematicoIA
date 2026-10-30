@@ -822,9 +822,10 @@ class Login(QWidget):
             datos = UsuarioController.buscar_usuario(usuario)
             if INGRESO_RAPIDO_TM:
                 vinculados = {
-                    "rostro": _campo(datos, "clase_tm_rostro") and "escaneo rápido",
-                    "voz": _campo(datos, "clase_tm_voz") and "escaneo rápido",
-                    "postura": "postura de ingreso" if _campo(datos, "plantilla_postura") else "",
+                    "rostro": _campo(datos, "embedding_facial") and "escaneo rápido",
+                    "voz": _campo(datos, "plantilla_voz") and "palabra clave",
+                    "postura": (_campo(datos, "clase_tm_postura") or _campo(datos, "plantilla_postura"))
+                               and "escaneo rápido",
                 }
             else:
                 vinculados = {
@@ -870,6 +871,7 @@ class Login(QWidget):
             from interfaces import ingreso_tm
             acciones["rostro"] = lambda: ingreso_tm.vincular(dlg, usuario, "rostro", refrescar)
             acciones["voz"] = lambda: ingreso_tm.vincular(dlg, usuario, "voz", refrescar)
+            acciones["postura"] = lambda: ingreso_tm.vincular(dlg, usuario, "postura", refrescar)
 
         refrescar()
         dlg.exec_()
@@ -1308,7 +1310,11 @@ class Login(QWidget):
         self._iniciar_sesion_plantilla("voz", "plantilla_voz", self._iniciar_sesion_voz_anterior)
 
     def iniciar_sesion_pose(self):
-        """Postura de ingreso propia si existe; si no, el sistema anterior (Teachable Machine)."""
+        """Escaneo rápido de postura; o la postura de ingreso / sistema anterior si está desactivado."""
+        if INGRESO_RAPIDO_TM:
+            from interfaces import ingreso_tm
+            ingreso_tm.ingresar(self, "postura")
+            return
         self._iniciar_sesion_plantilla("postura", "plantilla_postura", self._iniciar_sesion_pose_anterior)
 
     def _iniciar_sesion_plantilla(self, metodo, columna, flujo_anterior):

@@ -21,6 +21,7 @@ from utils.validaciones import Validaciones
 from utils.mensajes import Mensajes
 from interfaces.captura_biometrica import ESTILO_BOTONES_BIOMETRIA
 from interfaces.biometria_ingreso import RegistroPostura, registrar_palabra_ingreso
+from utils.umbrales_biometria import INGRESO_RAPIDO_TM
 
 
 class Registro(QWidget):
@@ -530,13 +531,16 @@ class Registro(QWidget):
                         print(f"[Registro] ⚠️ No se pudo guardar el embedding en la BD para '{usuario}'.")
 
                 if self._voz_capturada:
-                    palabra, plantilla = self._voz_capturada
+                    palabra, plantilla, clase_voz = self._voz_capturada
                     if not UsuarioController.guardar_palabra_ingreso(usuario, palabra, plantilla):
                         print(f"[Registro] ⚠️ No se pudo guardar la palabra de ingreso para '{usuario}'.")
+                    UsuarioController.guardar_clase_tm(usuario, "voz", clase_voz)
 
                 if self._pose_capturada:
-                    if not UsuarioController.guardar_plantilla_postura(usuario, self._pose_capturada):
+                    plantilla_pose, clase_pose = self._pose_capturada
+                    if not UsuarioController.guardar_plantilla_postura(usuario, plantilla_pose):
                         print(f"[Registro] ⚠️ No se pudo guardar la postura de ingreso para '{usuario}'.")
+                    UsuarioController.guardar_clase_tm(usuario, "postura", clase_pose)
 
                 Mensajes.informacion(
                     self,
@@ -665,8 +669,8 @@ class Registro(QWidget):
     # =====================================================
 
     def capturar_voz(self):
-        def al_terminar(palabra, plantilla):
-            self._voz_capturada = (palabra, plantilla)
+        def al_terminar(palabra, plantilla, clase=""):
+            self._voz_capturada = (palabra, plantilla, clase)
             self._marcar_capturado(self.lblEstadoVoz, "✓ Palabra grabada")
             Mensajes.informacion(
                 self,
@@ -675,11 +679,18 @@ class Registro(QWidget):
                 "Se vinculará a su cuenta al pulsar 'Crear cuenta'."
             )
 
+        if INGRESO_RAPIDO_TM:
+            # Registro adaptativo: se repite solo la grabación que salga mal
+            from interfaces.ingreso_tm import capturar_palabra_clave
+            capturada = capturar_palabra_clave(self)
+            if capturada:
+                al_terminar(*capturada)
+            return
         registrar_palabra_ingreso(self, al_terminar)
 
     def capturar_pose(self):
-        def al_terminar(plantilla):
-            self._pose_capturada = plantilla
+        def al_terminar(plantilla, clase=""):
+            self._pose_capturada = (plantilla, clase)
             self._marcar_capturado(self.lblEstadoPose, "✓ Postura capturada")
             Mensajes.informacion(
                 self,
@@ -688,6 +699,13 @@ class Registro(QWidget):
                 "Se vinculará a su cuenta al pulsar 'Crear cuenta'."
             )
 
+        if INGRESO_RAPIDO_TM:
+            # Un solo escaneo con los puntos del cuerpo en pantalla, como en Teachable Machine
+            from interfaces.ingreso_tm import capturar_postura
+            capturada = capturar_postura(self)
+            if capturada:
+                al_terminar(capturada["plantilla"], capturada["clase"])
+            return
         self._registro_postura = RegistroPostura(self, al_terminar)
         self._registro_postura.iniciar()
 
